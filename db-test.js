@@ -1,72 +1,74 @@
 const mysql = require('mysql2/promise');
 
-async function exploreDatabases() {
+async function exploreDatabase(dbName) {
     let connection;
     try {
         const config = {
             host: process.env.DB_HOST,
             port: process.env.DB_PORT || 3306,
             user: process.env.DB_USER,
-            password: process.env.DB_PASSWORD
+            password: process.env.DB_PASSWORD,
+            database: dbName
         };
 
         connection = await mysql.createConnection(config);
-        console.log('Successfully connected to the MySQL server');
+        console.log(`\nExploring database: ${dbName}`);
 
-        const databasesToExplore = ['dialokxml', 'information_schema'];
+        // Get list of tables
+        const [tables] = await connection.query('SHOW TABLES');
+        console.log(`Tables in ${dbName}:`, tables.map(table => Object.values(table)[0]).join(', '));
 
-        for (const dbName of databasesToExplore) {
-            console.log(`\nExploring database: ${dbName}`);
-            await connection.execute(`USE ${dbName}`);
+        // Explore each table
+        for (const tableRow of tables) {
+            const tableName = Object.values(tableRow)[0];
+            console.log(`\nTable: ${tableName}`);
 
-            // Get list of tables
-            const [tables] = await connection.execute('SHOW TABLES');
-            console.log(`Tables in ${dbName}:`, tables.map(table => Object.values(table)[0]));
+            // Get table structure
+            const [columns] = await connection.query(`DESCRIBE ${tableName}`);
+            console.log('Columns:');
+            columns.forEach(column => {
+                console.log(`  ${column.Field} (${column.Type})`);
+            });
 
-            // Explore each table
-            for (const tableRow of tables) {
-                const tableName = Object.values(tableRow)[0];
-                console.log(`\n  Table: ${tableName}`);
+            // Get row count
+            const [countResult] = await connection.query(`SELECT COUNT(*) as count FROM ${tableName}`);
+            console.log(`Row count: ${countResult[0].count}`);
 
-                // Get table structure
-                const [columns] = await connection.execute(`DESCRIBE ${tableName}`);
-                console.log('  Columns:');
-                columns.forEach(column => {
-                    console.log(`    ${column.Field} (${column.Type})`);
-                });
-
-                // Get row count
-                const [countResult] = await connection.execute(`SELECT COUNT(*) as count FROM ${tableName}`);
-                console.log(`  Row count: ${countResult[0].count}`);
-
-                // Sample data (only for dialokxml, skip for information_schema)
-                if (dbName === 'dialokxml') {
-                    const [sampleRows] = await connection.execute(`SELECT * FROM ${tableName} LIMIT 1`);
-                    if (sampleRows.length > 0) {
-                        console.log('  Sample data (first row):');
-                        const sampleRow = sampleRows[0];
-                        Object.keys(sampleRow).forEach(key => {
-                            let value = sampleRow[key];
-                            if (typeof value === 'string' && value.length > 50) {
-                                value = value.substring(0, 50) + '...';
-                            }
-                            if (key.toLowerCase().includes('password') || key.toLowerCase().includes('secret')) {
-                                value = '[REDACTED]';
-                            }
-                            console.log(`    ${key}: ${value}`);
-                        });
-                    } else {
-                        console.log('    (Table is empty)');
+            // Fetch sample rows (limit to 2 for brevity)
+            const [rows] = await connection.query(`SELECT * FROM ${tableName} LIMIT 2`);
+            console.log('Sample rows (up to 2):');
+            rows.forEach((row, index) => {
+                console.log(`  Row ${index + 1}:`);
+                Object.entries(row).forEach(([key, value]) => {
+                    let displayValue = value;
+                    if (value === null) {
+                        displayValue = 'NULL';
+                    } else if (typeof value === 'string') {
+                        if (value.startsWith('<?xml') || value.startsWith('<')) {
+                            displayValue = 'XML Content (truncated): ' + value.substring(0, 50) + '...';
+                        } else if (value.length > 100) {
+                            displayValue = value.substring(0, 100) + '...';
+                        }
+                    } else if (Buffer.isBuffer(value)) {
+                        displayValue = 'Binary Data (BLOB)';
                     }
-                }
-            }
+                    if (key.toLowerCase().includes('password') || key.toLowerCase().includes('secret')) {
+                        displayValue = '[REDACTED]';
+                    }
+                    console.log(`    ${key}: ${displayValue}`);
+                });
+            });
         }
-
     } catch (error) {
-        console.error('Error:', error);
+        console.error(`Error exploring ${dbName}:`, error);
     } finally {
         if (connection) await connection.end();
     }
 }
 
-exploreDatabases();
+async function main() {
+    await exploreDatabase('dialokxml');
+    await exploreDatabase('information_schema');
+}
+
+main().catch(console.error);
