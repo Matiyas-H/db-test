@@ -1,74 +1,50 @@
 const mysql = require('mysql2/promise');
 
-async function exploreDatabase(dbName) {
+async function analyzeContactInfo() {
     let connection;
     try {
-        const config = {
+        connection = await mysql.createConnection({
             host: process.env.DB_HOST,
-            port: process.env.DB_PORT || 3306,
             user: process.env.DB_USER,
             password: process.env.DB_PASSWORD,
-            database: dbName
-        };
+            database: 'dialokxml'
+        });
 
-        connection = await mysql.createConnection(config);
-        console.log(`\nExploring database: ${dbName}`);
+        const [rows] = await connection.execute(`
+            SELECT
+                COUNT(DISTINCT personid) AS total_unique_contacts,
+                COUNT(DISTINCT concernid) AS total_unique_concerns,
+                COUNT(DISTINCT company) AS total_unique_companies,
+                COUNT(DISTINCT title) AS total_unique_titles,
+                
+                (SELECT GROUP_CONCAT(DISTINCT company SEPARATOR ', ') 
+                 FROM (SELECT DISTINCT company FROM directory WHERE company != '' ORDER BY company LIMIT 5) AS top_companies) AS sample_companies,
+                
+                (SELECT GROUP_CONCAT(DISTINCT title SEPARATOR ', ') 
+                 FROM (SELECT DISTINCT title FROM directory WHERE title != '' ORDER BY title LIMIT 5) AS top_titles) AS sample_titles,
+                
+                COUNT(CASE WHEN firstname != '' THEN 1 END) AS contacts_with_firstname,
+                COUNT(CASE WHEN lastname != '' THEN 1 END) AS contacts_with_lastname,
+                COUNT(CASE WHEN company != '' THEN 1 END) AS contacts_with_company,
+                COUNT(CASE WHEN title != '' THEN 1 END) AS contacts_with_title,
+                COUNT(CASE WHEN organisation != '' THEN 1 END) AS contacts_with_organisation,
+                COUNT(CASE WHEN office != '' THEN 1 END) AS contacts_with_office,
+                COUNT(CASE WHEN commentexternal != '' THEN 1 END) AS contacts_with_external_comment,
+                COUNT(CASE WHEN commentinternal != '' THEN 1 END) AS contacts_with_internal_comment,
+                COUNT(CASE WHEN alias != '' THEN 1 END) AS contacts_with_alias
+            FROM 
+                directory;
+        `);
 
-        // Get list of tables
-        const [tables] = await connection.query('SHOW TABLES');
-        console.log(`Tables in ${dbName}:`, tables.map(table => Object.values(table)[0]).join(', '));
+        console.log('Contact Information Analysis:');
+        console.log(JSON.stringify(rows[0], null, 2));
 
-        // Explore each table
-        for (const tableRow of tables) {
-            const tableName = Object.values(tableRow)[0];
-            console.log(`\nTable: ${tableName}`);
-
-            // Get table structure
-            const [columns] = await connection.query(`DESCRIBE ${tableName}`);
-            console.log('Columns:');
-            columns.forEach(column => {
-                console.log(`  ${column.Field} (${column.Type})`);
-            });
-
-            // Get row count
-            const [countResult] = await connection.query(`SELECT COUNT(*) as count FROM ${tableName}`);
-            console.log(`Row count: ${countResult[0].count}`);
-
-            // Fetch sample rows (limit to 2 for brevity)
-            const [rows] = await connection.query(`SELECT * FROM ${tableName} LIMIT 2`);
-            console.log('Sample rows (up to 2):');
-            rows.forEach((row, index) => {
-                console.log(`  Row ${index + 1}:`);
-                Object.entries(row).forEach(([key, value]) => {
-                    let displayValue = value;
-                    if (value === null) {
-                        displayValue = 'NULL';
-                    } else if (typeof value === 'string') {
-                        if (value.startsWith('<?xml') || value.startsWith('<')) {
-                            displayValue = 'XML Content (truncated): ' + value.substring(0, 50) + '...';
-                        } else if (value.length > 100) {
-                            displayValue = value.substring(0, 100) + '...';
-                        }
-                    } else if (Buffer.isBuffer(value)) {
-                        displayValue = 'Binary Data (BLOB)';
-                    }
-                    if (key.toLowerCase().includes('password') || key.toLowerCase().includes('secret')) {
-                        displayValue = '[REDACTED]';
-                    }
-                    console.log(`    ${key}: ${displayValue}`);
-                });
-            });
-        }
+        return rows[0];
     } catch (error) {
-        console.error(`Error exploring ${dbName}:`, error);
+        console.error('Error analyzing contact info:', error);
     } finally {
         if (connection) await connection.end();
     }
 }
 
-async function main() {
-    await exploreDatabase('dialokxml');
-    await exploreDatabase('information_schema');
-}
-
-main().catch(console.error);
+analyzeContactInfo();
