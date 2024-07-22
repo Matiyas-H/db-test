@@ -41,26 +41,30 @@ async function analyzeContactInfo() {
                 directory;
         `);
 
-        // Function to search for a person by phone number
         async function searchByPhoneNumber(phoneNumber) {
             const [results] = await connection.execute(`
                 SELECT *
                 FROM directory
                 WHERE contactdata LIKE ?
                 LIMIT 1;
-            `, [`%<number secret="false" call="true" xfer="true">${phoneNumber}</number>%`]);
+            `, [`%<number secret="false" call="true" xfer="true">%${phoneNumber}%</number>%`]);
 
             if (results.length > 0) {
                 const contact = results[0];
                 const parsedXML = await parseXML(contact.contactdata);
+                const phoneNumbers = parsedXML.contact.subscription[0].number.map(num => num._);
+                
                 return {
                     personid: contact.personid,
-                    firstname: contact.firstname,
-                    lastname: contact.lastname,
+                    firstname: contact.firstname.trim(),
+                    lastname: contact.lastname.trim(),
                     company: contact.company,
                     title: contact.title,
-                    phoneNumber: phoneNumber,
-                    // Add other fields as needed
+                    phoneNumbers: phoneNumbers,
+                    email: parsedXML.contact.email[0]._,
+                    office: contact.office,
+                    commentexternal: contact.commentexternal,
+                    commentinternal: contact.commentinternal
                 };
             }
             return null;
@@ -72,7 +76,7 @@ async function analyzeContactInfo() {
         console.log(JSON.stringify(rows[0], null, 2));
         
         // Example of searching by phone number
-        const samplePhoneNumber = '1234567890'; // Replace with an actual phone number for testing
+        const samplePhoneNumber = '+358403542490'; // Using the phone number from your example
         const contactByPhone = await searchByPhoneNumber(samplePhoneNumber);
         
         console.log('INFO');
