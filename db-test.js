@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
 
-async function analyzeDialokFields() {
+async function analyzeContactInfo() {
     let connection;
     try {
         connection = await mysql.createConnection({
@@ -10,33 +10,55 @@ async function analyzeDialokFields() {
             database: 'dialokxml'
         });
 
-        const [fields] = await connection.execute(`
-            SELECT COLUMN_NAME
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = 'dialokxml'
-            AND TABLE_NAME = 'directory'
-            ORDER BY ORDINAL_POSITION;
+        const [rows] = await connection.execute(`
+            SELECT
+                COUNT(DISTINCT personid) AS total_unique_contacts,
+                COUNT(DISTINCT concernid) AS total_unique_concerns,
+                COUNT(DISTINCT company) AS total_unique_companies,
+                COUNT(DISTINCT title) AS total_unique_titles,
+                
+                (SELECT GROUP_CONCAT(DISTINCT company SEPARATOR ', ') 
+                 FROM (SELECT DISTINCT company FROM directory WHERE company != '' ORDER BY company LIMIT 5) AS top_companies) AS sample_companies,
+                
+                (SELECT GROUP_CONCAT(DISTINCT title SEPARATOR ', ') 
+                 FROM (SELECT DISTINCT title FROM directory WHERE title != '' ORDER BY title LIMIT 5) AS top_titles) AS sample_titles,
+                
+                COUNT(CASE WHEN firstname != '' THEN 1 END) AS contacts_with_firstname,
+                COUNT(CASE WHEN lastname != '' THEN 1 END) AS contacts_with_lastname,
+                COUNT(CASE WHEN company != '' THEN 1 END) AS contacts_with_company,
+                COUNT(CASE WHEN title != '' THEN 1 END) AS contacts_with_title,
+                COUNT(CASE WHEN organisation != '' THEN 1 END) AS contacts_with_organisation,
+                COUNT(CASE WHEN office != '' THEN 1 END) AS contacts_with_office,
+                COUNT(CASE WHEN commentexternal != '' THEN 1 END) AS contacts_with_external_comment,
+                COUNT(CASE WHEN commentinternal != '' THEN 1 END) AS contacts_with_internal_comment,
+                COUNT(CASE WHEN alias != '' THEN 1 END) AS contacts_with_alias
+            FROM 
+                directory;
         `);
 
-        const fieldNames = fields.map(field => field.COLUMN_NAME);
+        // Fetch a sample contact
+        const [sampleContact] = await connection.execute(`
+            SELECT *
+            FROM directory
+            WHERE firstname != '' AND lastname != ''
+            LIMIT 1;
+        `);
 
         console.log('INFO');
-        console.log('Dialok Directory Table Fields:');
+        console.log('Contact Information Analysis:');
         console.log('INFO');
-        console.log('{');
+        console.log(JSON.stringify(rows[0], null, 2));
         console.log('INFO');
-        fieldNames.forEach(field => {
-            console.log(`  "${field}": "",`);
-            console.log('INFO');
-        });
-        console.log('}');
+        console.log('Sample Contact:');
+        console.log('INFO');
+        console.log(JSON.stringify(sampleContact[0], null, 2));
 
-        return fieldNames;
+        return { stats: rows[0], sampleContact: sampleContact[0] };
     } catch (error) {
-        console.error('Error analyzing Dialok fields:', error);
+        console.error('Error analyzing contact info:', error);
     } finally {
         if (connection) await connection.end();
     }
 }
 
-analyzeDialokFields();
+analyzeContactInfo();
