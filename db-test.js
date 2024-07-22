@@ -101,7 +101,7 @@ app.get('/api/company/:companyName', async (req, res) => {
             SELECT *
             FROM directory
             WHERE company LIKE ?
-            LIMIT 5
+            LIMIT 50
         `;
 
         const [results] = await connection.execute(query, [`%${companyName}%`]);
