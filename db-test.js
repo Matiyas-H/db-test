@@ -121,50 +121,100 @@ app.get('/api/company/:companyName', async (req, res) => {
     }
 });
 
-app.get('/api/sample-data', async (req, res) => {
+
+
+app.get('/api/company/:companyName', async (req, res) => {
     let connection;
     try {
         connection = await getConnection();
+        const companyName = decodeURIComponent(req.params.companyName).toLowerCase();
 
-        // First, get the column names
-        const [columns] = await connection.execute(`
-            SELECT COLUMN_NAME
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = 'dialokxml' AND TABLE_NAME = 'directory'
-            ORDER BY ORDINAL_POSITION
-        `);
-
-        // Then, fetch a sample of the data
-        const [sampleData] = await connection.execute(`
+        const query = `
             SELECT *
             FROM directory
-            LIMIT 20
-        `);
+            WHERE LOWER(company) LIKE ? OR LOWER(organisation) LIKE ?
+            LIMIT 100
+        `;
 
-        // Process the data to handle potential large fields
-        const processedSampleData = sampleData.map(record => {
-            const processedRecord = {};
-            for (const key in record) {
-                if (typeof record[key] === 'string' && record[key].length > 1000) {
-                    processedRecord[key] = record[key].substring(0, 1000) + '... (truncated)';
-                } else {
-                    processedRecord[key] = record[key];
+        const [results] = await connection.execute(query, [`%${companyName}%`, `%${companyName}%`]);
+
+        if (results.length > 0) {
+            const contacts = await processContactResults(results);
+            const filteredContacts = contacts.filter(contact => contact !== null);
+            
+            // Group contacts by company and organisation
+            const groupedContacts = filteredContacts.reduce((acc, contact) => {
+                const key = contact.organisation || contact.company;
+                if (!acc[key]) {
+                    acc[key] = [];
                 }
-            }
-            return processedRecord;
-        });
+                acc[key].push(contact);
+                return acc;
+            }, {});
 
-        res.json({
-            columns: columns.map(col => col.COLUMN_NAME),
-            sampleData: processedSampleData
-        });
+            res.json({
+                mainCompany: companyName,
+                contacts: groupedContacts
+            });
+        } else {
+            res.status(404).json({ message: 'No contacts found for this company or its related organisations' });
+        }
     } catch (error) {
-        console.error('Error fetching sample data:', error);
+        console.error('Error searching for company contacts:', error);
         res.status(500).json({ message: 'Internal server error' });
     } finally {
         if (connection) await connection.end();
     }
 });
+
+// app.get('/api/sample-data', async (req, res) => {
+//     let connection;
+//     try {
+//         connection = await getConnection();
+
+//         // First, get the column names
+//         const [columns] = await connection.execute(`
+//             SELECT COLUMN_NAME
+//             FROM INFORMATION_SCHEMA.COLUMNS
+//             WHERE TABLE_SCHEMA = 'dialokxml' AND TABLE_NAME = 'directory'
+//             ORDER BY ORDINAL_POSITION
+//         `);
+
+//         // Then, fetch a sample of the data
+//         const [sampleData] = await connection.execute(`
+//             SELECT *
+//             FROM directory
+//             LIMIT 20
+//         `);
+
+//         // Process the data to handle potential large fields
+//         const processedSampleData = sampleData.map(record => {
+//             const processedRecord = {};
+//             for (const key in record) {
+//                 if (typeof record[key] === 'string' && record[key].length > 1000) {
+//                     processedRecord[key] = record[key].substring(0, 1000) + '... (truncated)';
+//                 } else {
+//                     processedRecord[key] = record[key];
+//                 }
+//             }
+//             return processedRecord;
+//         });
+
+//         res.json({
+//             columns: columns.map(col => col.COLUMN_NAME),
+//             sampleData: processedSampleData
+//         });
+//     } catch (error) {
+//         console.error('Error fetching sample data:', error);
+//         res.status(500).json({ message: 'Internal server error' });
+//     } finally {
+//         if (connection) await connection.end();
+//     }
+// });
+
+
+
+
 
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
