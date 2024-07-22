@@ -8,6 +8,8 @@ const port = process.env.PORT || 3000;
 
 const parseXML = util.promisify(xml2js.parseString);
 
+app.use(express.json());
+
 async function getConnection() {
     return await mysql.createConnection({
         host: process.env.DB_HOST,
@@ -17,43 +19,101 @@ async function getConnection() {
     });
 }
 
-app.get('/api/contact/:phoneNumber', async (req, res) => {
+async function processContactResults(results) {
+    return await Promise.all(results.map(async (contact) => {
+        const parsedXML = await parseXML(contact.contactdata);
+        const phoneNumbers = parsedXML.contact.subscription ? 
+            parsedXML.contact.subscription[0].number.map(num => num._.trim()) : [];
+        const email = parsedXML.contact.email ? parsedXML.contact.email[0]._.trim() : '';
+
+        return {
+            concernid: contact.concernid,
+            personid: contact.personid,
+            firstname: contact.firstname.trim(),
+            lastname: contact.lastname.trim(),
+            company: contact.company,
+            title: contact.title,
+            phoneNumbers: phoneNumbers,
+            email: email,
+            office: contact.office,
+            organisation: contact.organisation,
+            commentexternal: contact.commentexternal,
+            commentinternal: contact.commentinternal,
+            hideweb: contact.hideweb,
+            alias: contact.alias,
+            tcmsearch: contact.tcmsearch
+        };
+    }));
+}
+
+app.post('/api/search', async (req, res) => {
     let connection;
     try {
         connection = await getConnection();
-        const phoneNumber = req.params.phoneNumber;
+        const { firstName, lastName, company } = req.body;
 
-        const [results] = await connection.execute(`
+        let query = `
             SELECT *
             FROM directory
-            WHERE contactdata LIKE ?
-            LIMIT 1;
-        `, [`%<number secret="false" call="true" xfer="true">%${phoneNumber}%</number>%`]);
+            WHERE 1=1
+        `;
+        const queryParams = [];
+
+        if (firstName) {
+            query += ` AND firstname LIKE ?`;
+            queryParams.push(`%${firstName}%`);
+        }
+        if (lastName) {
+            query += ` AND lastname LIKE ?`;
+            queryParams.push(`%${lastName}%`);
+        }
+        if (company) {
+            query += ` AND company LIKE ?`;
+            queryParams.push(`%${company}%`);
+        }
+
+        query += ` LIMIT 10`;
+
+        const [results] = await connection.execute(query, queryParams);
 
         if (results.length > 0) {
-            const contact = results[0];
-            const parsedXML = await parseXML(contact.contactdata);
-            const phoneNumbers = parsedXML.contact.subscription[0].number.map(num => num._.trim());
-            
-            const contactInfo = {
-                personid: contact.personid,
-                firstname: contact.firstname.trim(),
-                lastname: contact.lastname.trim(),
-                company: contact.company,
-                title: contact.title,
-                phoneNumbers: phoneNumbers,
-                email: parsedXML.contact.email[0]._.trim(),
-                office: contact.office,
-                commentexternal: contact.commentexternal,
-                commentinternal: contact.commentinternal
-            };
-
-            res.json(contactInfo);
+            const contacts = await processContactResults(results);
+            res.json(contacts);
         } else {
-            res.status(404).json({ message: 'Contact not found' });
+            res.status(404).json({ message: 'No contacts found' });
         }
     } catch (error) {
-        console.error('Error searching for contact:', error);
+        console.error('Error searching for contacts:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    } finally {
+        if (connection) await connection.end();
+    }
+});
+
+// New endpoint for company search
+app.get('/api/company/:companyName', async (req, res) => {
+    let connection;
+    try {
+        connection = await getConnection();
+        const companyName = req.params.companyName;
+
+        const query = `
+            SELECT *
+            FROM directory
+            WHERE company LIKE ?
+            LIMIT 50
+        `;
+
+        const [results] = await connection.execute(query, [`%${companyName}%`]);
+
+        if (results.length > 0) {
+            const contacts = await processContactResults(results);
+            res.json(contacts);
+        } else {
+            res.status(404).json({ message: 'No contacts found for this company' });
+        }
+    } catch (error) {
+        console.error('Error searching for company contacts:', error);
         res.status(500).json({ message: 'Internal server error' });
     } finally {
         if (connection) await connection.end();
@@ -63,100 +123,3 @@ app.get('/api/contact/:phoneNumber', async (req, res) => {
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
-
-
-// const mysql = require('mysql2/promise');
-// const xml2js = require('xml2js');
-// const util = require('util');
-
-// const parseXML = util.promisify(xml2js.parseString);
-
-// async function analyzeContactInfo() {
-//     let connection;
-//     try {
-//         connection = await mysql.createConnection({
-//             host: process.env.DB_HOST,
-//             user: process.env.DB_USER,
-//             password: process.env.DB_PASSWORD,
-//             database: 'dialokxml'
-//         });
-
-//         const [rows] = await connection.execute(`
-//             SELECT
-//                 COUNT(DISTINCT personid) AS total_unique_contacts,
-//                 COUNT(DISTINCT concernid) AS total_unique_concerns,
-//                 COUNT(DISTINCT company) AS total_unique_companies,
-//                 COUNT(DISTINCT title) AS total_unique_titles,
-                
-//                 (SELECT GROUP_CONCAT(DISTINCT company SEPARATOR ', ') 
-//                  FROM (SELECT DISTINCT company FROM directory WHERE company != '' ORDER BY company LIMIT 5) AS top_companies) AS sample_companies,
-                
-//                 (SELECT GROUP_CONCAT(DISTINCT title SEPARATOR ', ') 
-//                  FROM (SELECT DISTINCT title FROM directory WHERE title != '' ORDER BY title LIMIT 5) AS top_titles) AS sample_titles,
-                
-//                 COUNT(CASE WHEN firstname != '' THEN 1 END) AS contacts_with_firstname,
-//                 COUNT(CASE WHEN lastname != '' THEN 1 END) AS contacts_with_lastname,
-//                 COUNT(CASE WHEN company != '' THEN 1 END) AS contacts_with_company,
-//                 COUNT(CASE WHEN title != '' THEN 1 END) AS contacts_with_title,
-//                 COUNT(CASE WHEN organisation != '' THEN 1 END) AS contacts_with_organisation,
-//                 COUNT(CASE WHEN office != '' THEN 1 END) AS contacts_with_office,
-//                 COUNT(CASE WHEN commentexternal != '' THEN 1 END) AS contacts_with_external_comment,
-//                 COUNT(CASE WHEN commentinternal != '' THEN 1 END) AS contacts_with_internal_comment,
-//                 COUNT(CASE WHEN alias != '' THEN 1 END) AS contacts_with_alias,
-//                 COUNT(CASE WHEN contactdata LIKE '%<number%' THEN 1 END) AS contacts_with_phone
-//             FROM 
-//                 directory;
-//         `);
-
-//         async function searchByPhoneNumber(phoneNumber) {
-//             const [results] = await connection.execute(`
-//                 SELECT *
-//                 FROM directory
-//                 WHERE contactdata LIKE ?
-//                 LIMIT 1;
-//             `, [`%<number secret="false" call="true" xfer="true">%${phoneNumber}%</number>%`]);
-
-//             if (results.length > 0) {
-//                 const contact = results[0];
-//                 const parsedXML = await parseXML(contact.contactdata);
-//                 const phoneNumbers = parsedXML.contact.subscription[0].number.map(num => num._);
-                
-//                 return {
-//                     personid: contact.personid,
-//                     firstname: contact.firstname.trim(),
-//                     lastname: contact.lastname.trim(),
-//                     company: contact.company,
-//                     title: contact.title,
-//                     phoneNumbers: phoneNumbers,
-//                     email: parsedXML.contact.email[0]._,
-//                     office: contact.office,
-//                     commentexternal: contact.commentexternal,
-//                     commentinternal: contact.commentinternal
-//                 };
-//             }
-//             return null;
-//         }
-
-//         console.log('INFO');
-//         console.log('Contact Information Analysis:');
-//         console.log('INFO');
-//         console.log(JSON.stringify(rows[0], null, 2));
-        
-//         // Example of searching by phone number
-//         const samplePhoneNumber = '+358403542490'; // Using the phone number from your example
-//         const contactByPhone = await searchByPhoneNumber(samplePhoneNumber);
-        
-//         console.log('INFO');
-//         console.log('Sample Contact by Phone Number:');
-//         console.log('INFO');
-//         console.log(JSON.stringify(contactByPhone, null, 2));
-
-//         return { stats: rows[0], contactByPhone };
-//     } catch (error) {
-//         console.error('Error analyzing contact info:', error);
-//     } finally {
-//         if (connection) await connection.end();
-//     }
-// }
-
-// analyzeContactInfo();
