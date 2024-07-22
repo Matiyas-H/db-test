@@ -1,4 +1,8 @@
 const mysql = require('mysql2/promise');
+const xml2js = require('xml2js');
+const util = require('util');
+
+const parseXML = util.promisify(xml2js.parseString);
 
 async function analyzeContactInfo() {
     let connection;
@@ -31,29 +35,52 @@ async function analyzeContactInfo() {
                 COUNT(CASE WHEN office != '' THEN 1 END) AS contacts_with_office,
                 COUNT(CASE WHEN commentexternal != '' THEN 1 END) AS contacts_with_external_comment,
                 COUNT(CASE WHEN commentinternal != '' THEN 1 END) AS contacts_with_internal_comment,
-                COUNT(CASE WHEN alias != '' THEN 1 END) AS contacts_with_alias
+                COUNT(CASE WHEN alias != '' THEN 1 END) AS contacts_with_alias,
+                COUNT(CASE WHEN contactdata LIKE '%<number%' THEN 1 END) AS contacts_with_phone
             FROM 
                 directory;
         `);
 
-        // Fetch a sample contact
-        const [sampleContact] = await connection.execute(`
-            SELECT *
-            FROM directory
-            WHERE firstname != '' AND lastname != ''
-            LIMIT 1;
-        `);
+        // Function to search for a person by phone number
+        async function searchByPhoneNumber(phoneNumber) {
+            const [results] = await connection.execute(`
+                SELECT *
+                FROM directory
+                WHERE contactdata LIKE ?
+                LIMIT 1;
+            `, [`%<number secret="false" call="true" xfer="true">${phoneNumber}</number>%`]);
+
+            if (results.length > 0) {
+                const contact = results[0];
+                const parsedXML = await parseXML(contact.contactdata);
+                return {
+                    personid: contact.personid,
+                    firstname: contact.firstname,
+                    lastname: contact.lastname,
+                    company: contact.company,
+                    title: contact.title,
+                    phoneNumber: phoneNumber,
+                    // Add other fields as needed
+                };
+            }
+            return null;
+        }
 
         console.log('INFO');
         console.log('Contact Information Analysis:');
         console.log('INFO');
         console.log(JSON.stringify(rows[0], null, 2));
+        
+        // Example of searching by phone number
+        const samplePhoneNumber = '1234567890'; // Replace with an actual phone number for testing
+        const contactByPhone = await searchByPhoneNumber(samplePhoneNumber);
+        
         console.log('INFO');
-        console.log('Sample Contact:');
+        console.log('Sample Contact by Phone Number:');
         console.log('INFO');
-        console.log(JSON.stringify(sampleContact[0], null, 2));
+        console.log(JSON.stringify(contactByPhone, null, 2));
 
-        return { stats: rows[0], sampleContact: sampleContact[0] };
+        return { stats: rows[0], contactByPhone };
     } catch (error) {
         console.error('Error analyzing contact info:', error);
     } finally {
