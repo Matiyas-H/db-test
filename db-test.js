@@ -10,7 +10,8 @@ async function analyzeContactInfo() {
             database: 'dialokxml'
         });
 
-        const [rows] = await connection.execute(`
+        // Original query with added phone number count
+        const [generalStats] = await connection.execute(`
             SELECT
                 COUNT(DISTINCT personid) AS total_unique_contacts,
                 COUNT(DISTINCT concernid) AS total_unique_concerns,
@@ -31,15 +32,40 @@ async function analyzeContactInfo() {
                 COUNT(CASE WHEN office != '' THEN 1 END) AS contacts_with_office,
                 COUNT(CASE WHEN commentexternal != '' THEN 1 END) AS contacts_with_external_comment,
                 COUNT(CASE WHEN commentinternal != '' THEN 1 END) AS contacts_with_internal_comment,
-                COUNT(CASE WHEN alias != '' THEN 1 END) AS contacts_with_alias
+                COUNT(CASE WHEN alias != '' THEN 1 END) AS contacts_with_alias,
+                COUNT(CASE WHEN phone != '' THEN 1 END) AS contacts_with_phone
             FROM 
                 directory;
         `);
 
-        console.log('Contact Information Analysis:');
-        console.log(JSON.stringify(rows[0], null, 2));
+        // Query to get a sample company structure
+        const [sampleCompany] = await connection.execute(`
+            SELECT *
+            FROM directory
+            WHERE company != ''
+            LIMIT 1;
+        `);
 
-        return rows[0];
+        // Query to get a sample person structure
+        const [samplePerson] = await connection.execute(`
+            SELECT *
+            FROM directory
+            WHERE firstname != '' AND lastname != ''
+            LIMIT 1;
+        `);
+
+        console.log('Contact Information Analysis:');
+        console.log(JSON.stringify(generalStats[0], null, 2));
+        console.log('\nSample Company Structure:');
+        console.log(JSON.stringify(sampleCompany[0], null, 2));
+        console.log('\nSample Person Structure:');
+        console.log(JSON.stringify(samplePerson[0], null, 2));
+
+        return {
+            generalStats: generalStats[0],
+            sampleCompany: sampleCompany[0],
+            samplePerson: samplePerson[0]
+        };
     } catch (error) {
         console.error('Error analyzing contact info:', error);
     } finally {
