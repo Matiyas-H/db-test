@@ -50,26 +50,22 @@ app.post('/api/search', async (req, res) => {
     let connection;
     try {
         connection = await getConnection();
-        const { fullName, company } = req.body;
+        const { searchTerm, company } = req.body;
 
-        if (!fullName || fullName.trim() === '') {
-            return res.status(400).json({ message: 'Full name is required' });
+        if (!searchTerm || searchTerm.trim() === '') {
+            return res.status(400).json({ message: 'Search term is required' });
         }
-
-        const nameParts = fullName.trim().split(' ');
-        const firstName = nameParts[0];
-        const lastName = nameParts[nameParts.length - 1];
 
         let query = `
             SELECT *
             FROM directory
-            WHERE firstname LIKE ? AND lastname LIKE ?
+            WHERE (firstname LIKE ? OR lastname LIKE ? OR CONCAT(firstname, ' ', lastname) LIKE ? OR alias LIKE ?)
         `;
-        const queryParams = [`%${firstName}%`, `%${lastName}%`];
+        const queryParams = [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`];
 
         if (company) {
-            query += ` AND company LIKE ?`;
-            queryParams.push(`%${company}%`);
+            query += ` AND (company LIKE ? OR organisation LIKE ?)`;
+            queryParams.push(`%${company}%`, `%${company}%`);
         }
 
         query += ` LIMIT 100`;
@@ -77,9 +73,8 @@ app.post('/api/search', async (req, res) => {
         const [results] = await connection.execute(query, queryParams);
 
         if (results.length > 0) {
-            const contacts = await processContactResults(results);
-            const filteredContacts = contacts.filter(contact => contact !== null);
-            res.json(filteredContacts);
+            const contacts = await processCompanyStructure(results);
+            res.json(contacts);
         } else {
             res.status(404).json({ message: 'No contacts found' });
         }
