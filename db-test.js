@@ -167,50 +167,50 @@ app.get('/api/company/:companyName', async (req, res) => {
     }
 });
 
-// app.get('/api/sample-data', async (req, res) => {
-//     let connection;
-//     try {
-//         connection = await getConnection();
+app.get('/api/sample-data', async (req, res) => {
+    let connection;
+    try {
+        connection = await getConnection();
 
-//         // First, get the column names
-//         const [columns] = await connection.execute(`
-//             SELECT COLUMN_NAME
-//             FROM INFORMATION_SCHEMA.COLUMNS
-//             WHERE TABLE_SCHEMA = 'dialokxml' AND TABLE_NAME = 'directory'
-//             ORDER BY ORDINAL_POSITION
-//         `);
+        // First, get the column names
+        const [columns] = await connection.execute(`
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'dialokxml' AND TABLE_NAME = 'directory'
+            ORDER BY ORDINAL_POSITION
+        `);
 
-//         // Then, fetch a sample of the data
-//         const [sampleData] = await connection.execute(`
-//             SELECT *
-//             FROM directory
-//             LIMIT 20
-//         `);
+        // Then, fetch a sample of the data
+        const [sampleData] = await connection.execute(`
+            SELECT *
+            FROM directory
+            LIMIT 20
+        `);
 
-//         // Process the data to handle potential large fields
-//         const processedSampleData = sampleData.map(record => {
-//             const processedRecord = {};
-//             for (const key in record) {
-//                 if (typeof record[key] === 'string' && record[key].length > 1000) {
-//                     processedRecord[key] = record[key].substring(0, 1000) + '... (truncated)';
-//                 } else {
-//                     processedRecord[key] = record[key];
-//                 }
-//             }
-//             return processedRecord;
-//         });
+        // Process the data to handle potential large fields
+        const processedSampleData = sampleData.map(record => {
+            const processedRecord = {};
+            for (const key in record) {
+                if (typeof record[key] === 'string' && record[key].length > 1000) {
+                    processedRecord[key] = record[key].substring(0, 1000) + '... (truncated)';
+                } else {
+                    processedRecord[key] = record[key];
+                }
+            }
+            return processedRecord;
+        });
 
-//         res.json({
-//             columns: columns.map(col => col.COLUMN_NAME),
-//             sampleData: processedSampleData
-//         });
-//     } catch (error) {
-//         console.error('Error fetching sample data:', error);
-//         res.status(500).json({ message: 'Internal server error' });
-//     } finally {
-//         if (connection) await connection.end();
-//     }
-// });
+        res.json({
+            columns: columns.map(col => col.COLUMN_NAME),
+            sampleData: processedSampleData
+        });
+    } catch (error) {
+        console.error('Error fetching sample data:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    } finally {
+        if (connection) await connection.end();
+    }
+});
 
 
 
