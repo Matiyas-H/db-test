@@ -72,7 +72,7 @@ app.post('/api/search', async (req, res) => {
             queryParams.push(`%${company}%`);
         }
 
-        query += ` LIMIT 10`;
+        query += ` LIMIT 100`;
 
         const [results] = await connection.execute(query, queryParams);
 
@@ -101,7 +101,7 @@ app.get('/api/company/:companyName', async (req, res) => {
             SELECT *
             FROM directory
             WHERE company LIKE ?
-            LIMIT 50
+            LIMIT 100
         `;
 
         const [results] = await connection.execute(query, [`%${companyName}%`]);
