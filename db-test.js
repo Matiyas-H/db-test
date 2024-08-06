@@ -50,36 +50,35 @@ app.post('/api/search', async (req, res) => {
     let connection;
     try {
         connection = await getConnection();
-        const { searchTerm, company } = req.body;
+        const { fullName, company } = req.body;
 
-        if (!searchTerm || searchTerm.trim() === '') {
-            return res.status(400).json({ message: 'Search term is required' });
+        if (!fullName || fullName.trim() === '' || !company || company.trim() === '') {
+            return res.status(400).json({ message: 'Both full name and company are required' });
         }
 
-        let query = `
+        const nameParts = fullName.trim().split(' ');
+        const firstName = nameParts[0];
+        const lastName = nameParts[nameParts.length - 1];
+
+        const query = `
             SELECT *
             FROM directory
-            WHERE (firstname LIKE ? OR lastname LIKE ? OR CONCAT(firstname, ' ', lastname) LIKE ? OR alias LIKE ?)
+            WHERE (firstname LIKE ? AND lastname LIKE ?)
+            AND (company LIKE ? OR organisation LIKE ?)
+            LIMIT 1
         `;
-        const queryParams = [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`];
-
-        if (company) {
-            query += ` AND (company LIKE ? OR organisation LIKE ?)`;
-            queryParams.push(`%${company}%`, `%${company}%`);
-        }
-
-        query += ` LIMIT 100`;
+        const queryParams = [`%${firstName}%`, `%${lastName}%`, `%${company}%`, `%${company}%`];
 
         const [results] = await connection.execute(query, queryParams);
 
         if (results.length > 0) {
-            const contacts = await processCompanyStructure(results);
-            res.json(contacts);
+            const contactDetails = await processContactResults(results);
+            res.json(contactDetails[0]); // Return the first (and only) result
         } else {
-            res.status(404).json({ message: 'No contacts found' });
+            res.status(404).json({ message: 'No contact found' });
         }
     } catch (error) {
-        console.error('Error searching for contacts:', error);
+        console.error('Error searching for contact:', error);
         res.status(500).json({ message: 'Internal server error' });
     } finally {
         if (connection) await connection.end();
