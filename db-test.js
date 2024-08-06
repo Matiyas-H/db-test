@@ -212,7 +212,85 @@ app.get('/api/sample-data', async (req, res) => {
     }
 });
 
+const xml2js = require('xml2js');
+const util = require('util');
 
+const parseXML = util.promisify(xml2js.parseString);
+
+app.get('/api/company-structure/:companyName', async (req, res) => {
+    let connection;
+    try {
+        connection = await getConnection();
+        const companyName = decodeURIComponent(req.params.companyName).toLowerCase();
+
+        const query = `
+            SELECT *
+            FROM directory
+            WHERE LOWER(company) LIKE ?
+            ORDER BY organisation, lastname, firstname
+        `;
+
+        const [results] = await connection.execute(query, [`%${companyName}%`]);
+
+        if (results.length > 0) {
+            const structuredData = await processCompanyStructure(results);
+            res.json(structuredData);
+        } else {
+            res.status(404).json({ message: 'No data found for this company' });
+        }
+    } catch (error) {
+        console.error('Error fetching company structure:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    } finally {
+        if (connection) await connection.end();
+    }
+});
+
+async function processCompanyStructure(results) {
+    const structuredData = {};
+
+    for (const result of results) {
+        try {
+            const parsedXML = await parseXML(result.contactdata);
+            const contact = parsedXML.contact;
+
+            const company = result.company;
+            const organisation = result.organisation || 'No Organization';
+
+            if (!structuredData[company]) {
+                structuredData[company] = {};
+            }
+
+            if (!structuredData[company][organisation]) {
+                structuredData[company][organisation] = [];
+            }
+
+            const phoneNumbers = contact.subscription ? 
+                contact.subscription.map(sub => sub.number[0]._).filter(num => num && num.trim() !== '') : [];
+
+            const contactInfo = {
+                personid: result.personid,
+                concerned: result.concernid,
+                firstname: result.firstname,
+                lastname: result.lastname,
+                title: result.title,
+                email: contact.email ? contact.email[0]._ : '',
+                phoneNumbers: phoneNumbers,
+                office: contact.office ? contact.office[0] : '',
+                tasks: contact.task ? contact.task.map(task => task._) : [],
+                commentExternal: result.commentexternal,
+                commentInternal: result.commentinternal,
+                alias: contact.alias ? contact.alias[0] : '',
+            };
+
+            structuredData[company][organisation].push(contactInfo);
+        } catch (error) {
+            console.error('Error processing contact:', error, 'Contact data:', result);
+        }
+    }
+
+    return structuredData;
+}
 
 
 
