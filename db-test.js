@@ -212,10 +212,7 @@ app.get('/api/sample-data', async (req, res) => {
     }
 });
 
-const xml2js = require('xml2js');
-const util = require('util');
 
-const parseXML = util.promisify(xml2js.parseString);
 
 app.get('/api/company-structure/:companyName', async (req, res) => {
     let connection;
