@@ -316,7 +316,83 @@ async function processCompanyStructure(results) {
     return structuredData;
 }
 
+app.get('/api/structured-search/:organization/:companyName', async (req, res) => {
+    let connection;
+    try {
+        connection = await getConnection();
+        const organization = decodeURIComponent(req.params.organization).toLowerCase();
+        const companyName = decodeURIComponent(req.params.companyName).toLowerCase();
 
+        const query = `
+            SELECT *
+            FROM directory
+            WHERE LOWER(organisation) LIKE ? AND LOWER(company) LIKE ?
+            ORDER BY lastname, firstname
+        `;
+
+        const [results] = await connection.execute(query, [`%${organization}%`, `%${companyName}%`]);
+
+        if (results.length > 0) {
+            const structuredData = await processStructuredResults(results);
+            res.json(structuredData);
+        } else {
+            res.status(404).json({ message: 'No data found for this organization and company' });
+        }
+    } catch (error) {
+        console.error('Error in structured search:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    } finally {
+        if (connection) await connection.end();
+    }
+});
+
+async function processStructuredResults(results) {
+    const structuredData = {};
+
+    for (const result of results) {
+        try {
+            const parsedXML = await parseXML(result.contactdata);
+            const contact = parsedXML.contact;
+
+            const organisation = result.organisation || 'No Organization';
+            const company = result.company || 'Unspecified Company';
+
+            if (!structuredData[organisation]) {
+                structuredData[organisation] = {};
+            }
+
+            if (!structuredData[organisation][company]) {
+                structuredData[organisation][company] = [];
+            }
+
+            const phoneNumbers = contact.subscription ? 
+                contact.subscription.flatMap(sub => 
+                    sub.number ? sub.number.map(num => num._ && typeof num._ === 'string' ? num._.trim() : '') : []
+                ).filter(Boolean) : [];
+
+            const contactInfo = {
+                personid: result.personid,
+                concerned: result.concernid,
+                firstname: result.firstname && typeof result.firstname === 'string' ? result.firstname.trim() : '',
+                lastname: result.lastname && typeof result.lastname === 'string' ? result.lastname.trim() : '',
+                title: result.title && typeof result.title === 'string' ? result.title.trim() : '',
+                email: contact.email && contact.email[0] && contact.email[0]._ ? contact.email[0]._.trim() : '',
+                phoneNumbers: phoneNumbers,
+                office: contact.office && contact.office[0] ? contact.office[0] : '',
+                tasks: contact.task ? contact.task.map(task => task && task._ ? task._.trim() : '').filter(Boolean) : [],
+                commentExternal: result.commentexternal,
+                commentInternal: result.commentinternal,
+                alias: contact.alias && contact.alias[0] ? contact.alias[0] : '',
+            };
+
+            structuredData[organisation][company].push(contactInfo);
+        } catch (error) {
+            console.error('Error processing contact:', error, 'Contact data:', result);
+        }
+    }
+
+    return structuredData;
+}
 
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
