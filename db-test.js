@@ -19,25 +19,58 @@ async function getConnection() {
     });
 }
 
+// async function processContactResults(results) {
+//     return await Promise.all(results.map(async (contact) => {
+//         try {
+//             const parsedXML = await parseXML(contact.contactdata);
+//             const phoneNumbers = parsedXML.contact.subscription ? 
+//                 parsedXML.contact.subscription[0].number.map(num => num._.trim()) : [];
+//             const email = parsedXML.contact.email ? parsedXML.contact.email[0]._.trim() : '';
+
+//             return {
+//                 concernid: contact.concernid,
+//                 personid: contact.personid,
+//                 firstname: contact.firstname ? contact.firstname.trim() : '',
+//                 lastname: contact.lastname ? contact.lastname.trim() : '',
+//                 company: contact.company ? contact.company.trim() : '',
+//                 title: contact.title ? contact.title.trim() : '',
+//                 phoneNumbers: phoneNumbers,
+//                 email: email,
+//                 office: contact.office ? contact.office.trim() : '',
+//                 organisation: contact.organisation ? contact.organisation.trim() : '',
+//             };
+//         } catch (error) {
+//             console.error('Error processing contact:', error, 'Contact data:', contact);
+//             return null;
+//         }
+//     }));
+// }
+
 async function processContactResults(results) {
     return await Promise.all(results.map(async (contact) => {
         try {
             const parsedXML = await parseXML(contact.contactdata);
-            const phoneNumbers = parsedXML.contact.subscription ? 
-                parsedXML.contact.subscription[0].number.map(num => num._.trim()) : [];
-            const email = parsedXML.contact.email ? parsedXML.contact.email[0]._.trim() : '';
+            
+            const phoneNumbers = parsedXML.contact && parsedXML.contact.subscription ? 
+                parsedXML.contact.subscription.flatMap(sub => 
+                    sub.number ? sub.number.map(num => num._ && typeof num._ === 'string' ? num._.trim() : '') : []
+                ).filter(Boolean) : [];
+            
+            const email = parsedXML.contact && parsedXML.contact.email && 
+                          parsedXML.contact.email[0] && parsedXML.contact.email[0]._ ? 
+                          parsedXML.contact.email[0]._.trim() : '';
 
             return {
                 concernid: contact.concernid,
                 personid: contact.personid,
-                firstname: contact.firstname ? contact.firstname.trim() : '',
-                lastname: contact.lastname ? contact.lastname.trim() : '',
-                company: contact.company ? contact.company.trim() : '',
-                title: contact.title ? contact.title.trim() : '',
+                firstname: contact.firstname && typeof contact.firstname === 'string' ? contact.firstname.trim() : '',
+                lastname: contact.lastname && typeof contact.lastname === 'string' ? contact.lastname.trim() : '',
+                company: contact.company && typeof contact.company === 'string' ? contact.company.trim() : '',
+                title: contact.title && typeof contact.title === 'string' ? contact.title.trim() : '',
                 phoneNumbers: phoneNumbers,
                 email: email,
-                office: contact.office ? contact.office.trim() : '',
-                organisation: contact.organisation ? contact.organisation.trim() : '',
+                office: contact.office && typeof contact.office === 'string' ? contact.office.trim() : '',
+                organisation: contact.organisation && typeof contact.organisation === 'string' ? contact.organisation.trim() : '',
             };
         } catch (error) {
             console.error('Error processing contact:', error, 'Contact data:', contact);
